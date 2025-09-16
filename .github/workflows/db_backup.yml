@@ -9,18 +9,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Add PostgreSQL APT repo and install pg_dump
+      - name: Add PostgreSQL APT repo and install pg_dump v17
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg lsb-release
           echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-17
+          sudo apt-get -y install postgresql-client-17
+          pg_dump --version
       - name: Make backup script executable
         run: chmod +x db/backup.sh
-      - name: Run backup script
-        run: ./db/backup.sh
+      - name: Run backup script with correct pg_dump
+        run: |
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
+          ./db/backup.sh
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Upload backup artifact

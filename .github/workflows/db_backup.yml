@@ -1,18 +1,16 @@
 name: DB Backup
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"   # runs daily at midnight UTC
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
-      - name: Debug - list repo files
+      - name: Debug repo structure
         run: ls -R
       - name: Make script executable
-        run: chmod +x DB_Backup/db/backup.sh
+        run: chmod +x db/backup.sh
       - name: Run backup script
-        run: DB_Backup/db/backup.sh
+        run: ./db/backup.sh
 

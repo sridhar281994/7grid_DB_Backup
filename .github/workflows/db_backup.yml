@@ -1,16 +1,24 @@
-name: DB Backup
-on:
-  workflow_dispatch:
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-      - name: Debug repo structure
-        run: ls -R
+      - uses: actions/checkout@v3
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y postgresql-client
+
       - name: Make script executable
         run: chmod +x db/backup.sh
+
       - name: Run backup script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: ./db/backup.sh
 
+      - name: Commit backup to repo
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add db/backups/*.sql
+          git commit -m "DB Backup on $(date)" || echo "No changes to commit"
+          git push

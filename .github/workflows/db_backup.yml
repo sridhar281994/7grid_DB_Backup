@@ -1,8 +1,8 @@
-name: DB Backup
+name: Database Backup
 on:
-  workflow_dispatch: # manual trigger
   schedule:
-    - cron: "0 3 * * *" # daily at 03:00 UTC
+    - cron: "0 0 * * *" # every day at midnight UTC
+  workflow_dispatch:     # allow manual trigger
 jobs:
   backup:
     runs-on: ubuntu-latest
@@ -10,15 +10,28 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
       - name: Set up PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Run backup
+        run: sudo apt-get install -y postgresql-client
+      - name: Make backup script executable
+        run: chmod +x DB_Backup/db/backup.sh
+      - name: Run backup script
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bash DB_Backup/db/backup.sh
-      - name: Commit and push backup
+      - name: Move dump file to dumps folder
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add db/db_backup_*.sql
-          git commit -m "DB backup $(date)"
-          git push
+          mkdir -p DB_Backup/dumps
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          mv dump.sql DB_Backup/dumps/db_backup_$TIMESTAMP.sql
+      - name: Commit & push dump to db-backups branch
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git checkout -B db-backups
+          git add DB_Backup/dumps/
+          git commit -m "DB backup on $(date)"
+          git push origin db-backups --force
+
+
+
+
+

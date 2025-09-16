@@ -1,20 +1,21 @@
+name: DB Backup
+on:
+  workflow_dispatch:   # :point_right: Enables the "Run workflow" button in Actions tab
+  schedule:
+    - cron: "0 0 * * *"   # (Optional) run every day at midnight UTC
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - name: Install PostgreSQL client
         run: sudo apt-get install -y postgresql-client
-
       - name: Make script executable
         run: chmod +x db/backup.sh
-
       - name: Run backup script
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: ./db/backup.sh
-
       - name: Commit backup to repo
         run: |
           git config user.name "github-actions"
@@ -23,4 +24,7 @@ jobs:
           git commit -m "DB Backup on $(date)" || echo "No changes to commit"
           git push
 
-          
+
+
+
+

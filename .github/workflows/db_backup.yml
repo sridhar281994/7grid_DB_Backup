@@ -16,7 +16,3 @@ jobs:
       - name: Run backup script
         run: DB_Backup/db/backup.sh
 
-
-
-
-

@@ -1,8 +1,11 @@
-#!/bin/bash
-set -e
-# File name with timestamp
-DATE=$(date +%Y-%m-%d_%H-%M)
-BACKUP_FILE="db_backup_$DATE.sql"
-# Dump database (structure + data)
-pg_dump --no-owner --no-privileges "$DATABASE_URL" > "db/$BACKUP_FILE"
-echo "Backup created: db/$BACKUP_FILE"
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Ensure backup dir exists
+mkdir -p db/backups
+
+# Timestamp for filename
+TS=$(date +"%Y%m%d_%H%M%S")
+
+# Run pg_dump using DATABASE_URL
+pg_dump "$DATABASE_URL" > "db/backups/backup_$TS.sql"

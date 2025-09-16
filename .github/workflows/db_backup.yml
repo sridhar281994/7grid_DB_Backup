@@ -22,3 +22,5 @@ jobs:
           git add db/backups/*.sql
           git commit -m "DB Backup on $(date)" || echo "No changes to commit"
           git push
+
+          

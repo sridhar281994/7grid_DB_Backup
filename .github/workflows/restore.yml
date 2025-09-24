@@ -19,4 +19,4 @@ jobs:
       - name: Restore database
         env:
           DATABASE_URL: ${{ secrets.Database_url }}
-        run: scripts/restore.sh
+        run: ./scripts/restore.sh

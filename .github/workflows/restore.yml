@@ -1,0 +1,22 @@
+name: Restore Database from Backup
+
+on:
+  workflow_dispatch: # Run manually from GitHub Actions tab
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Make restore.sh executable
+        run: chmod +x scripts/restore.sh
+
+      - name: Restore database
+        env:
+          DATABASE_URL: ${{ secrets.Database_url }}
+        run: ./scripts/restore.sh

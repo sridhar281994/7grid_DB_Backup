@@ -1,25 +1,18 @@
 #!/bin/bash
 set -e
-
-# Path to your backup file
 BACKUP_FILE="backup/db_backup.sql"
-
 if [ ! -f "$BACKUP_FILE" ]; then
-  echo "❌ Backup file not found at $BACKUP_FILE"
+  echo ":x: Backup file not found at $BACKUP_FILE"
   exit 1
 fi
-
 if [ -z "$DATABASE_URL" ]; then
-  echo "❌ DATABASE_URL not set!"
+  echo ":x: DATABASE_URL not set!"
   exit 1
 fi
-
-echo "📂 Using backup file: $BACKUP_FILE"
-echo "🔄 Restoring into database: $DATABASE_URL"
-
-# Optional: wipe schema first (uncomment if you want a clean restore)
-# psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-
-psql "$DATABASE_URL" < "$BACKUP_FILE"
-
-echo "✅ Restore completed successfully!"
+echo ":open_file_folder: Using backup file: $BACKUP_FILE"
+echo ":arrows_counterclockwise: Wiping schema and restoring into database: $DATABASE_URL"
+# Wipe the schema before restore
+psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+# Ignore ownership commands and role errors
+sed '/OWNER TO/d;/GRANT/d' "$BACKUP_FILE" | psql "$DATABASE_URL"
+echo ":white_check_mark: Restore completed successfully!"

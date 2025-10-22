@@ -18,4 +18,4 @@ jobs:
       - name: Run backup script
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: bash backup_pg.sh
+        run: bash scripts/backup_pg.sh

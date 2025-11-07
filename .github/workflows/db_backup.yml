@@ -2,14 +2,14 @@ name: Daily PostgreSQL Backup
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # every midnight UTC
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 jobs:
   backup:
     runs-on: ubuntu-latest
     container:
-      image: postgres:17    # always matches Render's PostgreSQL version
+      image: postgres:17
 
     steps:
       - name: Checkout repository
@@ -22,6 +22,25 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bash scripts/db_backup.sql
+
+      - name: Upload backup as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgdump
+          path: backup/pgdump/
+
+  commit:
+    runs-on: ubuntu-latest
+    needs: backup
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download backup artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pgdump
+          path: backup/pgdump/
 
       - name: Commit and push backup
         run: |

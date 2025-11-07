@@ -2,7 +2,7 @@ name: Daily PostgreSQL Backup
 
 on:
   schedule:
-    - cron: "0 0 * * *"     # every midnight UTC
+    - cron: "0 0 * * *" # every midnight UTC
   workflow_dispatch:
 
 jobs:
@@ -12,14 +12,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install PostgreSQL 17 client
+      - name: Force install PostgreSQL 17 client
         run: |
+          sudo apt-get remove -y postgresql-client || true
+          sudo apt-get remove -y postgresql-client-16 || true
+          sudo rm -f /etc/apt/sources.list.d/pgdg.list || true
           sudo apt-get update
-          sudo apt-get install -y wget ca-certificates
-          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get install -y wget ca-certificates lsb-release gnupg
+          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgres.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgres.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
+          which pg_dump
           pg_dump --version
 
       - name: Create backup directories
@@ -30,8 +37,7 @@ jobs:
       - name: Run SQL backup script
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          bash scripts/db_backup.sql
+        run: bash scripts/db_backup.sql
 
       - name: Commit and push backup
         run: |

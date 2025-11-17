@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       backup_file:
-        description: "Path to backup file (e.g., backup/pgdump/backup_20251107_1812.sql)"
+        description: "backup/pgdump/backup_20251107_1812.sql"
         required: true
 
 jobs:

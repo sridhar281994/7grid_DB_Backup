@@ -1,0 +1,22 @@
+name: Manual PostgreSQL Restore
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_file:
+        description: "Path to backup file (e.g., backup/pgdump/backup_20251107_1812.sql)"
+        required: true
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    container:
+      image: postgres:17
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run restore
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bash scripts/db_restore.sql ${{ github.event.inputs.backup_file }}

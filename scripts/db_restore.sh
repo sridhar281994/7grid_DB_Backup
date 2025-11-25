@@ -19,5 +19,9 @@ if [ ! -f "$BACKUP_FILE" ]; then
 fi
 
 echo "Starting PostgreSQL restore from $BACKUP_FILE..."
-psql "$DATABASE_URL" < "$BACKUP_FILE"
+
+# Drop existing schema & restore cleanly
+pg_restore --clean --if-exists --no-owner --no-privileges \
+  --dbname="$DATABASE_URL" "$BACKUP_FILE"
+
 echo "Restore completed successfully."

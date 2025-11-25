@@ -4,19 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       backup_file:
-        description: "backup/pgdump/backup_20251123_0144.sql"
+        description: "Enter backup path"
         required: true
+        default: backup/pgdump/backup_20251123_0144.sql
 
 jobs:
   restore:
     runs-on: ubuntu-latest
     container:
       image: postgres:17
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run restore
+      - name: Restore database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: bash scripts/scripts/db_restore.sql ${{ github.event.inputs.backup_file }}
+        run: |
+          echo "Restoring file: ${{ github.event.inputs.backup_file }}"
+          bash scripts/db_restore.sh "${{ github.event.inputs.backup_file }}"

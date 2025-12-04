@@ -9,7 +9,7 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     container:
-      image: postgres:17
+      image: postgres:18
 
     steps:
       - name: Checkout repository

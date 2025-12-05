@@ -9,6 +9,7 @@ Features
 - Supports optional proxy configuration
 - Provides separate JSON artifacts for fileset and VM snapshot checks
 - Saves a full fileset dump for audit/debug parity with prior tooling
+- Includes snapshot counts and SLA domain names per server
 
 Environment variables
 ---------------------
@@ -156,20 +157,22 @@ def fuzzy_match(server: str, fileset: Dict) -> bool:
     return (s in fileset.get("server", "")) or (s in (fileset.get("path") or ""))
 
 
-def latest_snapshot_after_cutoff(rsc: Rubrik, snappable_id: str) -> Tuple[str, str]:
+def latest_snapshot_after_cutoff(rsc: Rubrik, snappable_id: str) -> Tuple[str, str, int, str]:
     try:
         vars_json = json.loads(
             gpls.odsSnapshotListfromSnappableVars.replace("REPLACEME", snappable_id)
         )
     except Exception:
         vars_json = {"snappableId": snappable_id}
+    vars_json.setdefault("first", 50)
     snaps = rsc.q(gpls.odsSnapshotListfromSnappable, vars_json)
     conn = snaps.get("data", {}).get("snapshotsListConnection") if snaps else None
     edges = (conn or {}).get("edges", []) if conn else []
     if not edges:
-        return "NO", "N/A"
+        return "NO", "N/A", 0, "N/A"
 
     latest = edges[0].get("node", {})
+    sla_name = (latest.get("slaDomain") or {}).get("name", "N/A")
     dt = latest.get("date")
     try:
         snap_dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
@@ -177,12 +180,12 @@ def latest_snapshot_after_cutoff(rsc: Rubrik, snappable_id: str) -> Tuple[str, s
         snap_dt = None
 
     if not snap_dt:
-        return "NO", "N/A"
+        return "NO", "N/A", len(edges), sla_name
 
     now = datetime.now(timezone.utc)
     days_diff = (now.date() - snap_dt.date()).days
     status = "YES" if days_diff in (0, 1) else "NO"
-    return status, snap_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    return status, snap_dt.strftime("%Y-%m-%d %H:%M:%S UTC"), len(edges), sla_name
 
 
 # ==========================================
@@ -278,11 +281,13 @@ def check_filesets(rsc: Rubrik, serverlist: List[str]) -> List[Dict]:
                     "fileset": fs.get("fileset", "N/A"),
                     "last_backup": "N/A",
                     "status": "NO",
+                    "snapshot_count": 0,
+                    "sla_domain": fs.get("sla", "N/A"),
                 }
             )
             continue
 
-        status, dt_str = latest_snapshot_after_cutoff(rsc, snappable_id)
+        status, dt_str, snap_count, sla_name = latest_snapshot_after_cutoff(rsc, snappable_id)
         server_display = fs.get("_requested_server", fs.get("server", "n/a"))
         results.append(
             {
@@ -293,10 +298,12 @@ def check_filesets(rsc: Rubrik, serverlist: List[str]) -> List[Dict]:
                 "fileset": fs.get("fileset", "N/A"),
                 "last_backup": dt_str,
                 "status": status,
+                "snapshot_count": snap_count,
+                "sla_domain": fs.get("sla", sla_name),
             }
         )
         print(
-            f"{server_display:25} | Fileset | In Rubrik: YES | Backup: {status:3} | {dt_str}"
+            f"{server_display:25} | Fileset | Snaps: {snap_count:3} | SLA: {fs.get('sla', sla_name):20} | Backup: {status:3} | {dt_str}"
         )
     return results
 
@@ -344,7 +351,16 @@ def check_vm_snapshots(rsc: Rubrik, serverlist: List[str], idmap: Dict[str, str]
 
         rid = idmap.get(srv)
         if not rid:
-            results.append({"server": srv, "in_rubrik": "NO", "last_backup": "N/A", "status": "NO"})
+            results.append(
+                {
+                    "server": srv,
+                    "in_rubrik": "NO",
+                    "last_backup": "N/A",
+                    "status": "NO",
+                    "snapshot_count": 0,
+                    "sla_domain": "N/A",
+                }
+            )
             continue
 
         try:
@@ -353,15 +369,26 @@ def check_vm_snapshots(rsc: Rubrik, serverlist: List[str], idmap: Dict[str, str]
             )
         except Exception:
             vars_json = {"snappableId": rid}
+        vars_json.setdefault("first", 50)
 
         snaps = rsc.q(gpls.odsSnapshotListfromSnappable, vars_json)
         conn = snaps.get("data", {}).get("snapshotsListConnection") if snaps else None
         edges = conn.get("edges", []) if conn else []
         if not edges:
-            results.append({"server": srv, "in_rubrik": "YES", "last_backup": "N/A", "status": "NO"})
+            results.append(
+                {
+                    "server": srv,
+                    "in_rubrik": "YES",
+                    "last_backup": "N/A",
+                    "status": "NO",
+                    "snapshot_count": 0,
+                    "sla_domain": "N/A",
+                }
+            )
             continue
 
         latest = edges[0].get("node", {})
+        sla_name = (latest.get("slaDomain") or {}).get("name", "N/A")
         dt = latest.get("date")
         try:
             snap_dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
@@ -376,15 +403,20 @@ def check_vm_snapshots(rsc: Rubrik, serverlist: List[str], idmap: Dict[str, str]
             backed_up = "NO"
             dt_str = "N/A"
 
+        snapshot_count = len(edges)
         results.append(
             {
                 "server": srv,
                 "in_rubrik": "YES",
                 "last_backup": dt_str,
                 "status": backed_up,
+                "snapshot_count": snapshot_count,
+                "sla_domain": sla_name,
             }
         )
-        print(f"{srv:25} | VM      | In Rubrik: YES | Backup: {backed_up:3} | {dt_str}")
+        print(
+            f"{srv:25} | VM      | Snaps: {snapshot_count:3} | SLA: {sla_name:20} | Backup: {backed_up:3} | {dt_str}"
+        )
     return results
 
 

@@ -20,6 +20,11 @@ try:
 except Exception:
     storage = None
 
+try:
+    from utils.otp_utils import send_otp
+except Exception:
+    send_otp = None
+
 
 class SettingsScreen(Screen):
     music_playing = BooleanProperty(False)
@@ -283,6 +288,7 @@ class SettingsScreen(Screen):
             return
 
         email = ""
+        phone = ""
         if storage:
             user = storage.get_user() or {}
             email = (
@@ -290,32 +296,47 @@ class SettingsScreen(Screen):
                 or user.get("email_id")
                 or user.get("contact_email")
             )
+            phone = (
+                user.get("phone")
+                or user.get("phone_number")
+                or user.get("mobile")
+                or ""
+            )
 
-        if not email:
-            message = "No registered email found for OTP."
+        if status_label:
+            target_desc = email or "your registered email"
+            status_label.text = f"Sending OTP to {target_desc}..."
 
-            def notify_no_email(_dt):
+        if not (phone and phone.isdigit()):
+            message = "No registered phone number found for OTP verification."
+
+            def notify_no_phone(_dt):
                 if status_label:
                     status_label.text = message
                 else:
                     self.show_popup("Error", message)
 
-            Clock.schedule_once(notify_no_email, 0)
+            Clock.schedule_once(notify_no_phone, 0)
             return
 
         def worker():
             try:
-                resp = requests.post(
-                    f"{backend}/auth/request-payment-otp",
-                    headers={"Authorization": f"Bearer {token}"},
-                    json={"reason": "payment_methods", "channel": "email", "email": email},
-                    timeout=10,
-                    verify=False,
+                if send_otp is None:
+                    raise RuntimeError("OTP service unavailable. Please update utils.otp_utils.")
+
+                data = send_otp(phone)
+                ok = bool(data.get("ok", True)) if isinstance(data, dict) else True
+                message = (
+                    data.get("message")
+                    if isinstance(data, dict)
+                    else "OTP sent successfully."
                 )
-                if resp.status_code == 200:
-                    message = resp.json().get("message") or "OTP sent successfully."
-                else:
-                    raise Exception(resp.text or "Failed to request OTP")
+                if not message:
+                    message = "OTP sent successfully." if ok else "Failed to send OTP."
+                if not ok:
+                    raise Exception(message)
+                if email:
+                    message = f"OTP sent to {email}. Check your inbox."
             except Exception as exc:
                 message = f"OTP request failed: {exc}"
 

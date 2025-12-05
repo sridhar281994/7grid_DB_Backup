@@ -20,7 +20,6 @@ RUBRIK_CLIENT_ID            OAuth client id for CDM
 RUBRIK_CLIENT_SECRET        OAuth client secret for CDM
 HTTP_PROXY / HTTPS_PROXY    Optional proxy endpoints
 serverlist / SERVER_NAMES   Comma/newline separated server names (preferred)
-SERVER_LIST_PATH            Optional path to a newline separated server list (legacy)
 """
 
 import json
@@ -49,7 +48,6 @@ REQUEST_TIMEOUT = int(os.getenv("RUBRIK_REQUEST_TIMEOUT", "10"))
 TOKEN_URL_TEMPLATE = os.getenv("RUBRIK_TOKEN_URL")
 CLUSTERS_RAW = os.getenv("RUBRIK_CLUSTERS")
 
-SERVER_LIST_PATH = os.getenv("SERVER_LIST_PATH")
 SERVER_NAMES_RAW = os.getenv("SERVER_NAMES") or os.getenv("serverlist")
 
 
@@ -151,9 +149,6 @@ def load_server_list() -> List[str]:
             print(f"[INFO] Loaded {len(entries)} servers from inline 'serverlist' variable")
             return entries
         raise SystemExit("[ERROR] 'serverlist' variable is set but empty.")
-
-    if SERVER_LIST_PATH:
-        return _load_servers_from_file(SERVER_LIST_PATH, "SERVER_LIST_PATH")
 
     legacy_path = "L2Backup/serverslist5"
     if os.path.exists(legacy_path):

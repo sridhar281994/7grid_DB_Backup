@@ -66,6 +66,8 @@ class SettingsScreen(Screen):
                             self.ids.phone_input.text = user.get("phone") or ""
                         if self.ids.get("upi_input"):
                             self.ids.upi_input.text = user.get("upi_id") or ""
+                        if self.ids.get("paypal_input"):
+                            self.ids.paypal_input.text = user.get("paypal_id") or ""
                     Clock.schedule_once(update_inputs, 0)
             except Exception as e:
                 print(f"[WARN] Failed to preload settings: {e}")
@@ -146,12 +148,16 @@ class SettingsScreen(Screen):
     def save_settings(self):
         name = self.ids.name_input.text.strip()
         desc = self.ids.desc_input.text.strip()
+        paypal_widget = self.ids.get("paypal_input")
+        paypal = paypal_widget.text.strip() if paypal_widget else ""
 
         payload = {}
         if name:
             payload["name"] = name
         if desc:
             payload["description"] = desc
+        if paypal:
+            payload["paypal_id"] = paypal
 
         if not payload:
             self.show_popup("Nothing to update", "Please edit a field first.")

@@ -1,0 +1,138 @@
+#:import dp kivy.metrics.dp
+
+<SettingsScreen>:
+    profile_image: root.profile_image
+
+    FloatLayout:
+        canvas.before:
+            Color:
+                rgba: 1, 1, 1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+                source: "assets/common.png"
+
+        ScrollView:
+            size_hint: 1, 1
+            do_scroll_y: True
+
+            BoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(10)
+                padding: dp(15)
+
+                Button:
+                    size_hint: None, None
+                    size: dp(90), dp(90)
+                    pos_hint: {"center_x": 0.5}
+                    background_normal: root.profile_image
+                    background_down: root.profile_image
+                    border: (0,0,0,0)
+                    on_release: root.change_profile_picture()
+
+                Label:
+                    id: wallet_label
+                    text: "Wallet: 0 coins"
+                    font_size: "17sp"
+                    color: 0, 0.6, 0, 1
+                    size_hint_y: None
+                    height: dp(28)
+                    halign: "center"
+                    valign: "middle"
+                    text_size: self.size
+
+                TextInput:
+                    id: name_input
+                    hint_text: "Your Name"
+                    font_size: "16sp"
+                    size_hint_y: None
+                    height: dp(42)
+                    background_color: (1,1,1,0.8)
+                    padding: dp(10)
+
+                TextInput:
+                    id: phone_input
+                    hint_text: "Phone Number"
+                    readonly: True
+                    font_size: "16sp"
+                    size_hint_y: None
+                    height: dp(42)
+                    background_color: (0.95,0.95,0.95,1)
+                    padding: dp(10)
+
+                TextInput:
+                    id: desc_input
+                    hint_text: "Description"
+                    font_size: "16sp"
+                    size_hint_y: None
+                    height: dp(60)
+                    background_color: (1,1,1,0.8)
+                    padding: dp(10)
+
+                TextInput:
+                    id: upi_input
+                    hint_text: "UPI ID"
+                    font_size: "16sp"
+                    size_hint_y: None
+                    height: dp(42)
+                    background_color: (1,1,1,0.8)
+                    padding: dp(10)
+
+                TextInput:
+                    id: paypal_input
+                    hint_text: "PayPal ID"
+                    font_size: "16sp"
+                    size_hint_y: None
+                    height: dp(42)
+                    background_color: (1,1,1,0.8)
+                    padding: dp(10)
+
+                ToggleButton:
+                    id: audio_toggle
+                    text: "Sound ON" if root.music_playing else "Sound OFF"
+                    font_size: "15sp"
+                    size_hint_y: None
+                    height: dp(40)
+                    background_color: (0.2,0.6,1,0.9) if self.state == "down" else (0.7,0.7,0.7,0.9)
+                    color: (1,1,1,1)
+                    on_release:
+                        root.toggle_audio()
+                        self.text = "Sound ON" if root.music_playing else "Sound OFF"
+
+                Button:
+                    text: "Wallet Portal (Recharge / Withdraw)"
+                    size_hint_y: None
+                    height: dp(40)
+                    font_size: "15sp"
+                    background_color: (0.2,0.6,1,1)
+                    color: (1,1,1,1)
+                    on_release: root.open_wallet_portal()
+
+                Button:
+                    text: "Wallet History"
+                    size_hint_y: None
+                    height: dp(40)
+                    font_size: "15sp"
+                    background_color: (0.9,0.6,0.1,1)
+                    color: (1,1,1,1)
+                    on_release: root.show_wallet_history()
+
+                Button:
+                    text: "Save Settings"
+                    size_hint_y: None
+                    height: dp(40)
+                    font_size: "15sp"
+                    background_color: (0.2,0.7,0.2,1)
+                    color: (1,1,1,1)
+                    on_release: root.save_settings()
+
+                Button:
+                    text: "Back"
+                    size_hint_y: None
+                    height: dp(38)
+                    font_size: "15sp"
+                    background_color: (0.7,0.2,0.2,1)
+                    color: (1,1,1,1)
+                    on_release: root.manager.current = "stage"

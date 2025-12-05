@@ -198,7 +198,12 @@ class SettingsScreen(Screen):
 
             phone_input = self.ids.get("phone_input")
             if phone_input is not None:
-                phone_input.text = user.get("phone") or ""
+                phone_value = (
+                    user.get("phone")
+                    or user.get("phone_number")
+                    or user.get("mobile")
+                )
+                phone_input.text = phone_value or ""
 
             upi_input = self.ids.get("upi_input")
             if upi_input is not None:

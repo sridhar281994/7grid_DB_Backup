@@ -39,6 +39,7 @@ class SettingsScreen(Screen):
             user = storage.get_user() or {}
             if user.get("profile_image"):
                 self.profile_image = user["profile_image"]
+            self._populate_user_inputs(user)
 
         token = storage.get_token() if storage else None
         backend = storage.get_backend_url() if storage else None
@@ -56,19 +57,7 @@ class SettingsScreen(Screen):
                 if resp.status_code == 200:
                     user = resp.json()
                     storage.set_user(user)
-
-                    def update_inputs(dt):
-                        if self.ids.get("name_input"):
-                            self.ids.name_input.text = user.get("name") or ""
-                        if self.ids.get("desc_input"):
-                            self.ids.desc_input.text = user.get("description") or ""
-                        if self.ids.get("phone_input"):
-                            self.ids.phone_input.text = user.get("phone") or ""
-                        if self.ids.get("upi_input"):
-                            self.ids.upi_input.text = user.get("upi_id") or ""
-                        if self.ids.get("paypal_input"):
-                            self.ids.paypal_input.text = user.get("paypal_id") or ""
-                    Clock.schedule_once(update_inputs, 0)
+                    self._populate_user_inputs(user)
             except Exception as e:
                 print(f"[WARN] Failed to preload settings: {e}")
 
@@ -150,12 +139,16 @@ class SettingsScreen(Screen):
         desc = self.ids.desc_input.text.strip()
         paypal_widget = self.ids.get("paypal_input")
         paypal = paypal_widget.text.strip() if paypal_widget else ""
+        upi_widget = self.ids.get("upi_input")
+        upi = upi_widget.text.strip() if upi_widget else ""
 
         payload = {}
         if name:
             payload["name"] = name
         if desc:
             payload["description"] = desc
+        if upi:
+            payload["upi_id"] = upi
         if paypal:
             payload["paypal_id"] = paypal
 
@@ -189,6 +182,33 @@ class SettingsScreen(Screen):
                 Clock.schedule_once(lambda dt: self.show_popup("Error", f"Request failed: {e}"), 0)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _populate_user_inputs(self, user):
+        if not user:
+            return
+
+        def apply_inputs(_dt):
+            name_input = self.ids.get("name_input")
+            if name_input is not None:
+                name_input.text = user.get("name") or ""
+
+            desc_input = self.ids.get("desc_input")
+            if desc_input is not None:
+                desc_input.text = user.get("description") or ""
+
+            phone_input = self.ids.get("phone_input")
+            if phone_input is not None:
+                phone_input.text = user.get("phone") or ""
+
+            upi_input = self.ids.get("upi_input")
+            if upi_input is not None:
+                upi_input.text = user.get("upi_id") or ""
+
+            paypal_input = self.ids.get("paypal_input")
+            if paypal_input is not None:
+                paypal_input.text = user.get("paypal_id") or ""
+
+        Clock.schedule_once(apply_inputs, 0)
 
     # ------------------ Wallet portal helpers ------------------
     def _resolve_wallet_base_url(self) -> str:

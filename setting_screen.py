@@ -216,71 +216,65 @@ class SettingsScreen(Screen):
 
     def _prompt_payment_otp(self, payload, token, backend):
         otp_input = TextInput(
-            hint_text="Enter OTP",
+            hint_text="Enter OTP from email",
             password=True,
             size_hint_y=None,
             height=40,
             input_filter="int",
         )
         status_label = Label(
-            text="OTP required to update payment IDs.",
+            text="Sending OTP...",
             size_hint_y=None,
-            height=40,
+            height=50,
             halign="center",
             valign="middle",
         )
         status_label.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
 
-        btn_box = BoxLayout(size_hint_y=None, height=40, spacing=10)
-        send_btn = Button(text="Send OTP")
-        verify_btn = Button(text="Verify & Save")
-        cancel_btn = Button(text="Cancel")
-        btn_box.add_widget(send_btn)
-        btn_box.add_widget(verify_btn)
-        btn_box.add_widget(cancel_btn)
-
         layout = BoxLayout(orientation="vertical", spacing=10, padding=10)
         info_label = Label(
-            text="We sent an OTP to your registered contact. Enter it below to confirm changes.",
+            text="We are sending a verification code to your registered email. Enter it below and press Save to confirm the changes.",
             size_hint_y=None,
-            height=70,
+            height=90,
             halign="center",
             valign="middle",
         )
         info_label.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
+        save_btn = Button(
+            text="Save",
+            size_hint_y=None,
+            height=45,
+            background_color=(0.2, 0.7, 0.2, 1),
+            color=(1, 1, 1, 1),
+        )
+
         layout.add_widget(info_label)
         layout.add_widget(otp_input)
         layout.add_widget(status_label)
-        layout.add_widget(btn_box)
+        layout.add_widget(save_btn)
 
         popup = Popup(
             title="OTP Verification",
             content=layout,
             size_hint=(0.9, None),
-            height=300,
+            height=320,
             auto_dismiss=False,
         )
-
-        def trigger_send_otp(*_):
-            status_label.text = "Requesting OTP..."
-            self._request_payment_otp(token, backend, status_label)
 
         def verify_and_save(*_):
             otp_code = otp_input.text.strip()
             if len(otp_code) < 4:
-                status_label.text = "Enter the OTP you received."
+                status_label.text = "Enter the OTP sent to your email."
                 return
             popup.dismiss()
             self._submit_settings(payload, token, backend, otp_code)
 
-        send_btn.bind(on_release=trigger_send_otp)
-        verify_btn.bind(on_release=verify_and_save)
-        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
+        save_btn.bind(on_release=verify_and_save)
 
         popup.open()
-        trigger_send_otp()
+        self._send_payment_otp_email(token, backend, status_label)
 
-    def _request_payment_otp(self, token, backend, status_label=None):
+    def _send_payment_otp_email(self, token, backend, status_label=None):
         if not (token and backend):
             if status_label:
                 status_label.text = "Missing auth details for OTP request."
@@ -288,12 +282,33 @@ class SettingsScreen(Screen):
                 self.show_popup("Error", "Missing token or backend.")
             return
 
+        email = ""
+        if storage:
+            user = storage.get_user() or {}
+            email = (
+                user.get("email")
+                or user.get("email_id")
+                or user.get("contact_email")
+            )
+
+        if not email:
+            message = "No registered email found for OTP."
+
+            def notify_no_email(_dt):
+                if status_label:
+                    status_label.text = message
+                else:
+                    self.show_popup("Error", message)
+
+            Clock.schedule_once(notify_no_email, 0)
+            return
+
         def worker():
             try:
                 resp = requests.post(
                     f"{backend}/auth/request-payment-otp",
                     headers={"Authorization": f"Bearer {token}"},
-                    json={"reason": "payment_methods"},
+                    json={"reason": "payment_methods", "channel": "email", "email": email},
                     timeout=10,
                     verify=False,
                 )

@@ -4,30 +4,28 @@ Unified Rubrik CDM backup checker for filesets and VM snapshots.
 
 Features
 --------
-- Single authentication and GraphQL client for both checks
+- Single authentication and GraphQL client per cluster
+- Supports multiple clusters via RUBRIK_CLUSTERS (comma/newline separated)
+- Accepts server names directly from the `serverlist` CICD variable (comma/newline separated)
 - Checks only today's or yesterday's snapshots (UTC-aware)
-- Supports optional proxy configuration
-- Provides separate JSON artifacts for fileset and VM snapshot checks
-- Saves a full fileset dump for audit/debug parity with prior tooling
-- Includes snapshot counts and SLA domain names per server
+- Emits snapshot counts and SLA names in the console output
+- No filesystem artifacts required; everything is streamed to the job log
 
 Environment variables
 ---------------------
-RSC_FQDN                     Rubrik Security Cloud (CDM) FQDN (default: kohls.my.rubrik.com)
-RUBRIK_CLIENT_ID             OAuth client id for CDM
-RUBRIK_CLIENT_SECRET         OAuth client secret for CDM
-HTTP_PROXY / HTTPS_PROXY     Optional proxy endpoints
-SERVER_LIST_PATH             Path to the shared server list file
-serverlist                   Alternate env var name for SERVER_LIST_PATH (GitLab compatibility)
-FILESET_SERVER_LIST_PATH     Optional override path for fileset-specific server list
-VMSNAPSHOT_SERVER_LIST_PATH  Optional override path for VM snapshot server list
-ALL_FILESETS_DUMP            Output path for full fileset dump (default: L2Backup/all_filesets_dump.json)
-FILESET_OUT_FILE             Output JSON for fileset results (default: L2Backup/partial_results_check_filesets.json)
-SNAPSHOT_OUT_FILE            Output JSON for VM snapshot results (default: L2Backup/partial_results_<job>.json)
+RUBRIK_CLUSTERS             Comma/newline separated list of Rubrik cluster FQDNs
+RSC_FQDN                    Fallback single cluster FQDN (default: kohls.my.rubrik.com)
+RUBRIK_TOKEN_URL            Optional auth URL template (supports {cluster} or {fqdn})
+RUBRIK_CLIENT_ID            OAuth client id for CDM
+RUBRIK_CLIENT_SECRET        OAuth client secret for CDM
+HTTP_PROXY / HTTPS_PROXY    Optional proxy endpoints
+serverlist / SERVER_NAMES   Comma/newline separated server names (preferred)
+SERVER_LIST_PATH            Optional path to a newline separated server list (legacy)
 """
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -48,31 +46,28 @@ CSECRET = os.getenv("RUBRIK_CLIENT_SECRET")
 PROXY = os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
 PROXIES = {"http": PROXY, "https": PROXY} if PROXY else None
 REQUEST_TIMEOUT = int(os.getenv("RUBRIK_REQUEST_TIMEOUT", "10"))
+TOKEN_URL_TEMPLATE = os.getenv("RUBRIK_TOKEN_URL")
+CLUSTERS_RAW = os.getenv("RUBRIK_CLUSTERS")
 
-SERVER_LIST_PATH = os.getenv("SERVER_LIST_PATH") or os.getenv("serverlist")
-FILESET_SERVER_LIST_PATH = os.getenv("FILESET_SERVER_LIST_PATH")
-VMSNAPSHOT_SERVER_LIST_PATH = os.getenv("VMSNAPSHOT_SERVER_LIST_PATH")
-
-ALL_FILESETS_DUMP = os.getenv("ALL_FILESETS_DUMP", "L2Backup/all_filesets_dump.json")
-FILESET_OUT_FILE = os.getenv("FILESET_OUT_FILE", "L2Backup/partial_results_check_filesets.json")
-job_id = os.getenv("CI_JOB_NAME", "default").replace(" ", "_")
-SNAPSHOT_OUT_FILE = os.getenv("SNAPSHOT_OUT_FILE", f"L2Backup/partial_results_{job_id}.json")
+SERVER_LIST_PATH = os.getenv("SERVER_LIST_PATH")
+SERVER_NAMES_RAW = os.getenv("SERVER_NAMES") or os.getenv("serverlist")
 
 
 # ==========================================
 # Rubrik GraphQL Client
 # ==========================================
 class Rubrik:
-    def __init__(self, fqdn: str, cid: str, csecret: str):
+    def __init__(self, fqdn: str, cid: str, csecret: str, token_url_template: Optional[str] = None):
         if not cid or not csecret:
             raise SystemExit("RUBRIK_CLIENT_ID and RUBRIK_CLIENT_SECRET must be set.")
         self.fqdn = fqdn
         self.cid = cid
         self.csecret = csecret
+        self.token_url_template = token_url_template
         self.tok = self._auth()
 
     def _auth(self) -> str:
-        url = f"https://{self.fqdn}/api/client_token"
+        url = self._token_url()
         payload = {
             "grant_type": "client_credentials",
             "client_id": self.cid,
@@ -121,13 +116,24 @@ class Rubrik:
             print(f"[ERROR] GraphQL query failed: {exc}")
             return None
 
+    def _token_url(self) -> str:
+        if self.token_url_template:
+            template = self.token_url_template.strip()
+            try:
+                return template.format(cluster=self.fqdn, fqdn=self.fqdn)
+            except KeyError:
+                return template
+        return f"https://{self.fqdn}/api/client_token"
+
 
 # ==========================================
 # Helper Functions
 # ==========================================
-def load_server_list(path: str, label: str) -> List[str]:
-    if not path:
-        raise SystemExit(f"[ERROR] {label} path not provided. Set SERVER_LIST_PATH or serverlist.")
+def _parse_inline_servers(raw: str) -> List[str]:
+    return [token.strip().lower() for token in re.split(r"[,\n]", raw) if token.strip()]
+
+
+def _load_servers_from_file(path: str, label: str) -> List[str]:
     if not os.path.exists(path):
         raise SystemExit(f"[ERROR] {label} not found: {path}")
     with open(path) as handle:
@@ -136,9 +142,34 @@ def load_server_list(path: str, label: str) -> List[str]:
     return entries
 
 
-def ensure_parent(path: str) -> None:
-    parent = os.path.dirname(path) or "."
-    os.makedirs(parent, exist_ok=True)
+def load_server_list() -> List[str]:
+    if SERVER_NAMES_RAW:
+        if os.path.exists(SERVER_NAMES_RAW):
+            return _load_servers_from_file(SERVER_NAMES_RAW, "serverlist")
+        entries = _parse_inline_servers(SERVER_NAMES_RAW)
+        if entries:
+            print(f"[INFO] Loaded {len(entries)} servers from inline 'serverlist' variable")
+            return entries
+        raise SystemExit("[ERROR] 'serverlist' variable is set but empty.")
+
+    if SERVER_LIST_PATH:
+        return _load_servers_from_file(SERVER_LIST_PATH, "SERVER_LIST_PATH")
+
+    legacy_path = "L2Backup/serverslist5"
+    if os.path.exists(legacy_path):
+        return _load_servers_from_file(legacy_path, "legacy default server list")
+
+    raise SystemExit("[ERROR] No server names provided. Set the 'serverlist' CICD variable.")
+
+
+def resolve_clusters() -> List[str]:
+    if CLUSTERS_RAW:
+        clusters = [c.strip() for c in re.split(r"[,\n]", CLUSTERS_RAW) if c.strip()]
+        if clusters:
+            print(f"[INFO] Checking {len(clusters)} Rubrik cluster(s) from RUBRIK_CLUSTERS")
+            return clusters
+    print("[INFO] RUBRIK_CLUSTERS not set; using single cluster from RSC_FQDN")
+    return [RSC_FQDN]
 
 
 def _safe_path_string(physical_path_field):
@@ -252,10 +283,6 @@ def fetch_all_filesets(rsc: Rubrik) -> List[Dict]:
 
 def check_filesets(rsc: Rubrik, serverlist: List[str]) -> List[Dict]:
     all_filesets = fetch_all_filesets(rsc)
-    ensure_parent(ALL_FILESETS_DUMP)
-    with open(ALL_FILESETS_DUMP, "w", encoding="utf-8") as handle:
-        json.dump(all_filesets, handle, indent=2)
-    print(f"[SAVE] Full fileset dump saved to {ALL_FILESETS_DUMP}\n")
 
     matches: List[Dict] = []
     for srv in serverlist:
@@ -435,39 +462,26 @@ def summarize(results: List[Dict], label: str) -> None:
     print("=" * 55 + "\n")
 
 
-def save_results(path: str, data: List[Dict], label: str) -> None:
-    ensure_parent(path)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2)
-    print(f"[SAVE] {label} results written to {path}")
-
-
 # ==========================================
 # MAIN
 # ==========================================
 def main():
-    shared_path = SERVER_LIST_PATH or "L2Backup/serverslist5"
-    serverlist = load_server_list(shared_path, "shared server list")
+    servers = load_server_list()
+    clusters = resolve_clusters()
 
-    fileset_serverlist = serverlist
-    if FILESET_SERVER_LIST_PATH and FILESET_SERVER_LIST_PATH != shared_path:
-        fileset_serverlist = load_server_list(FILESET_SERVER_LIST_PATH, "fileset server list")
+    for cluster in clusters:
+        print("\n" + "=" * 70)
+        print(f"[CLUSTER] {cluster}")
+        print("=" * 70)
 
-    snapshot_serverlist = serverlist
-    override = VMSNAPSHOT_SERVER_LIST_PATH
-    if override and override != shared_path:
-        snapshot_serverlist = load_server_list(override, "VM snapshot server list")
+        rsc = Rubrik(cluster, CID, CSECRET, token_url_template=TOKEN_URL_TEMPLATE)
 
-    rsc = Rubrik(RSC_FQDN, CID, CSECRET)
+        fileset_results = check_filesets(rsc, servers)
+        summarize(fileset_results, f"Fileset | {cluster}")
 
-    fileset_results = check_filesets(rsc, fileset_serverlist)
-    summarize(fileset_results, "Fileset")
-    save_results(FILESET_OUT_FILE, fileset_results, "Fileset")
-
-    vm_index = build_vm_object_index(rsc)
-    vm_results = check_vm_snapshots(rsc, snapshot_serverlist, vm_index)
-    summarize(vm_results, "VM Snapshot")
-    save_results(SNAPSHOT_OUT_FILE, vm_results, "VM Snapshot")
+        vm_index = build_vm_object_index(rsc)
+        vm_results = check_vm_snapshots(rsc, servers, vm_index)
+        summarize(vm_results, f"VM Snapshot | {cluster}")
 
     print("[DONE] Combined Rubrik backup checks complete.")
 

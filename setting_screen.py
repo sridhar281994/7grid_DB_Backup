@@ -27,6 +27,11 @@ class SettingsScreen(Screen):
 
     WALLET_WEB_URL = os.getenv("WALLET_WEB_URL", "").rstrip("/")
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._original_upi = ""
+        self._original_paypal = ""
+
     def on_pre_enter(self):
         if not hasattr(self, "sound"):
             self.sound = SoundLoader.load("assets/background.mp3")
@@ -147,9 +152,12 @@ class SettingsScreen(Screen):
             payload["name"] = name
         if desc:
             payload["description"] = desc
-        if upi:
+
+        original_upi = (self._original_upi or "").strip()
+        original_paypal = (self._original_paypal or "").strip()
+        if upi and upi != original_upi:
             payload["upi_id"] = upi
-        if paypal:
+        if paypal and paypal != original_paypal:
             payload["paypal_id"] = paypal
 
         if not payload:
@@ -162,32 +170,20 @@ class SettingsScreen(Screen):
             self.show_popup("Error", "Missing token or backend.")
             return
 
-        def worker():
-            try:
-                resp = requests.patch(
-                    f"{backend}/users/me",
-                    headers={"Authorization": f"Bearer {token}"},
-                    json=payload,
-                    timeout=10,
-                    verify=False,
-                )
-                if resp.status_code == 200:
-                    user = resp.json()
-                    storage.set_user(user)
-                    Clock.schedule_once(lambda dt: self.show_popup("Success", "Settings updated!"), 0)
-                    Clock.schedule_once(lambda dt: self.refresh_wallet_balance(), 0)
-                else:
-                    Clock.schedule_once(lambda dt: self.show_popup("Error", f"Update failed: {resp.text}"), 0)
-            except Exception as e:
-                Clock.schedule_once(lambda dt: self.show_popup("Error", f"Request failed: {e}"), 0)
+        if self._needs_payment_otp(payload):
+            self._prompt_payment_otp(payload, token, backend)
+            return
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._submit_settings(payload, token, backend)
 
     def _populate_user_inputs(self, user):
         if not user:
             return
 
         def apply_inputs(_dt):
+            self._original_upi = user.get("upi_id") or ""
+            self._original_paypal = user.get("paypal_id") or ""
+
             name_input = self.ids.get("name_input")
             if name_input is not None:
                 name_input.text = user.get("name") or ""
@@ -214,6 +210,137 @@ class SettingsScreen(Screen):
                 paypal_input.text = user.get("paypal_id") or ""
 
         Clock.schedule_once(apply_inputs, 0)
+
+    def _needs_payment_otp(self, payload):
+        return any(key in payload for key in ("upi_id", "paypal_id"))
+
+    def _prompt_payment_otp(self, payload, token, backend):
+        otp_input = TextInput(
+            hint_text="Enter OTP",
+            password=True,
+            size_hint_y=None,
+            height=40,
+            input_filter="int",
+        )
+        status_label = Label(
+            text="OTP required to update payment IDs.",
+            size_hint_y=None,
+            height=40,
+            halign="center",
+            valign="middle",
+        )
+        status_label.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
+
+        btn_box = BoxLayout(size_hint_y=None, height=40, spacing=10)
+        send_btn = Button(text="Send OTP")
+        verify_btn = Button(text="Verify & Save")
+        cancel_btn = Button(text="Cancel")
+        btn_box.add_widget(send_btn)
+        btn_box.add_widget(verify_btn)
+        btn_box.add_widget(cancel_btn)
+
+        layout = BoxLayout(orientation="vertical", spacing=10, padding=10)
+        info_label = Label(
+            text="We sent an OTP to your registered contact. Enter it below to confirm changes.",
+            size_hint_y=None,
+            height=70,
+            halign="center",
+            valign="middle",
+        )
+        info_label.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
+        layout.add_widget(info_label)
+        layout.add_widget(otp_input)
+        layout.add_widget(status_label)
+        layout.add_widget(btn_box)
+
+        popup = Popup(
+            title="OTP Verification",
+            content=layout,
+            size_hint=(0.9, None),
+            height=300,
+            auto_dismiss=False,
+        )
+
+        def trigger_send_otp(*_):
+            status_label.text = "Requesting OTP..."
+            self._request_payment_otp(token, backend, status_label)
+
+        def verify_and_save(*_):
+            otp_code = otp_input.text.strip()
+            if len(otp_code) < 4:
+                status_label.text = "Enter the OTP you received."
+                return
+            popup.dismiss()
+            self._submit_settings(payload, token, backend, otp_code)
+
+        send_btn.bind(on_release=trigger_send_otp)
+        verify_btn.bind(on_release=verify_and_save)
+        cancel_btn.bind(on_release=lambda *_: popup.dismiss())
+
+        popup.open()
+        trigger_send_otp()
+
+    def _request_payment_otp(self, token, backend, status_label=None):
+        if not (token and backend):
+            if status_label:
+                status_label.text = "Missing auth details for OTP request."
+            else:
+                self.show_popup("Error", "Missing token or backend.")
+            return
+
+        def worker():
+            try:
+                resp = requests.post(
+                    f"{backend}/auth/request-payment-otp",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"reason": "payment_methods"},
+                    timeout=10,
+                    verify=False,
+                )
+                if resp.status_code == 200:
+                    message = resp.json().get("message") or "OTP sent successfully."
+                else:
+                    raise Exception(resp.text or "Failed to request OTP")
+            except Exception as exc:
+                message = f"OTP request failed: {exc}"
+
+            def update_status(_dt):
+                if status_label:
+                    status_label.text = message
+                else:
+                    self.show_popup("OTP", message)
+
+            Clock.schedule_once(update_status, 0)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _submit_settings(self, payload, token, backend, otp_code=None):
+        request_payload = dict(payload)
+        if otp_code:
+            request_payload["otp"] = otp_code
+
+        def worker():
+            try:
+                resp = requests.patch(
+                    f"{backend}/users/me",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json=request_payload,
+                    timeout=10,
+                    verify=False,
+                )
+                if resp.status_code == 200:
+                    user = resp.json()
+                    storage.set_user(user)
+                    self._populate_user_inputs(user)
+                    Clock.schedule_once(lambda dt: self.show_popup("Success", "Settings updated!"), 0)
+                    Clock.schedule_once(lambda dt: self.refresh_wallet_balance(), 0)
+                else:
+                    error_text = resp.text or "Unknown error"
+                    Clock.schedule_once(lambda dt: self.show_popup("Error", f"Update failed: {error_text}"), 0)
+            except Exception as e:
+                Clock.schedule_once(lambda dt: self.show_popup("Error", f"Request failed: {e}"), 0)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ------------------ Wallet portal helpers ------------------
     def _resolve_wallet_base_url(self) -> str:
@@ -370,10 +497,13 @@ class SettingsScreen(Screen):
         threading.Thread(target=worker, daemon=True).start()
 
     # ------------------ Popup helper ------------------
-    def show_popup(self, title: str, message: str):
+    def show_popup(self, title: str, message: str, auto_dismiss_after: float = 2.5):
         popup = Popup(
             title=title,
             content=Label(text=message),
             size_hint=(0.7, 0.3),
         )
         popup.open()
+        if auto_dismiss_after:
+            Clock.schedule_once(lambda dt: popup.dismiss(), auto_dismiss_after)
+        return popup

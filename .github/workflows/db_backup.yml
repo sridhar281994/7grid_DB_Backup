@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create backup directories
-        run: mkdir -p Dirt/backup scripts
+        run: mkdir -p Dirt/backup backup/pgdump
 
       - name: Run database backup
         env:
@@ -28,6 +28,7 @@ jobs:
         with:
           name: pgdump
           path: Dirt/backup/
+          if-no-files-found: error
 
   commit:
     runs-on: ubuntu-latest

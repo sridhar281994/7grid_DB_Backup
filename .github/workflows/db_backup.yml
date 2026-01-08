@@ -23,8 +23,7 @@ jobs:
       - name: Run database backup
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          bash scripts/db_backup.sh
+        run: bash scripts/db_backup.sql
 
       - name: Verify backup exists
         run: |

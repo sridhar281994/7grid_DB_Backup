@@ -3,7 +3,7 @@ set -e
 
 echo "Starting PostgreSQL backup using Docker container..."
 
-mkdir -p backup/pgdump
+mkdir -p Dirt/backup/
 
 BACKUP_FILE="backup/pgdump/backup_$(date +%Y%m%d_%H%M).sql"
 
